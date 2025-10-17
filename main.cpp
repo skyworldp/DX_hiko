@@ -49,6 +49,67 @@ int main(int argc, char *argv[])
         std::cerr << "  1. 摄像头是否正确连接" << std::endl;
         std::cerr << "  2. 网络配置是否正确（GigE 相机）" << std::endl;
         std::cerr << "  3. MVS SDK 是否正确安装" << std::endl;
+#ifdef USE_OPENCV
+        {
+            namespace fs = std::filesystem;
+            std::vector<fs::path> searchRoots;
+            auto appendIfValid = [&](const fs::path &candidate) {
+                if (candidate.empty())
+                    return;
+                std::error_code ec;
+                fs::path normalized = fs::weakly_canonical(candidate, ec);
+                const fs::path &pathToStore = ec ? candidate : normalized;
+                if (std::find(searchRoots.begin(), searchRoots.end(), pathToStore) == searchRoots.end())
+                {
+                    searchRoots.push_back(pathToStore);
+                }
+            };
+
+            appendIfValid(fs::current_path());
+
+            if (const char *envDir = std::getenv("HIKO_MODEL_DIR"))
+            {
+                appendIfValid(fs::path(envDir));
+            }
+
+            std::error_code exeEc;
+            fs::path exePath = fs::weakly_canonical(fs::path(argv[0]), exeEc);
+            fs::path exeDir = exeEc ? fs::path(argv[0]).parent_path() : exePath.parent_path();
+            appendIfValid(exeDir);
+            if (exeDir.has_parent_path())
+            {
+                appendIfValid(exeDir.parent_path());
+            }
+
+            // NOTE: 为了简化调试，下面直接使用硬编码的模型与标签绝对路径。
+            // 如果你已在项目根目录创建了 labels.txt（默认我已生成 1..9），直接使用它：
+            fs::path modelPath = "/home/skyworld/文档/hiko/model/resnet_best_embedded.fixed.onnx"; // use simplified
+                                                                                                   // ONNX by default
+
+            if (fs::exists(modelPath))
+            {
+                // 使用写死的绝对路径 labels.txt（便于调试）
+                std::string labelsPathStr = "/home/skyworld/文档/hiko/labels.txt";
+
+                auto matcher = std::make_shared<armor::ArmorMatcher>();
+                if (matcher->loadWithLabels(modelPath.string(), labelsPathStr))
+                {
+                    armor::setGlobalArmorMatcher(matcher);
+                    std::cout << "装甲板匹配模型已加载: " << modelPath << std::endl;
+                    if (!labelsPathStr.empty())
+                        std::cout << "使用标签文件: " << labelsPathStr << std::endl;
+                }
+                else
+                {
+                    std::cerr << "装甲板匹配模型加载失败: " << matcher->lastError() << std::endl;
+                }
+            }
+            else
+            {
+                std::cerr << "未找到指定的模型，请检查 main.cpp 中的硬编码路径: " << modelPath << std::endl;
+            }
+        }
+#endif
         return -1;
     }
 
